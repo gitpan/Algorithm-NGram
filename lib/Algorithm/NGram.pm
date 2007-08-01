@@ -10,7 +10,7 @@ use constant {
     END_TOK => ':ENDTOK:',
 };
 
-our $VERSION = 0.1;
+our $VERSION = 0.2;
 
 =head1 NAME
 
@@ -106,8 +106,9 @@ sub add_text {
     $self->add_start_token;
 
     # tokenize text
-    foreach my $tok (split(qr/\s+/, $text)) {
-        $tok =~ s/\W//g; # remove non-word chars
+    foreach my $tok (split(/ /, $text)) {
+        $tok =~ s/ +//g; # remove spaces
+
         next unless $tok;
 
         $self->add_token($tok);
@@ -291,7 +292,7 @@ table. You will not normally need to call this.
 
 sub token_key {
     my ($self, @toks) = @_;
-    return join(' ', @toks);
+    return join('-', @toks);
 }
 
 1;

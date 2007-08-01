@@ -1,0 +1,6 @@
+Revision history for Perl extension Algorithm::NGram.
+
+0.01  Wed Aug  1 13:48:39 2007
+	- original version; created by h2xs 1.23 with options
+		-A -n Algorithm::NGram
+

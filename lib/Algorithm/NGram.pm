@@ -5,12 +5,15 @@ use warnings;
 use Carp qw (croak);
 use List::Util qw (shuffle);
 
+use base qw/Class::Accessor::Fast/;
+__PACKAGE__->mk_accessors(qw/token_count token_table/);
+
 use constant {
     START_TOK => ':STARTTOK:',
     END_TOK => ':ENDTOK:',
 };
 
-our $VERSION = 0.2;
+our $VERSION = 0.3;
 
 =head1 NAME
 
@@ -89,7 +92,11 @@ Returns token window size (e.g. the "n" in n-gram)
 
 =cut
 
-sub token_count { $_[0]->{token_count} }
+=item token_table
+
+Returns n-gram table
+
+=cut
 
 =item add_text
 
@@ -207,7 +214,7 @@ based on whatever text was added.
 sub generate_text {
     my ($self, %opts) = @_;
 
-    my @toks = $self->generate;
+    my @toks = $self->generate(%opts);
     return join(' ', @toks);
 }
 
@@ -221,7 +228,8 @@ previously been fed in.
 sub generate {
     my ($self, %opts) = @_;
 
-    $self->analyze;
+    $self->analyze
+        unless $opts{no_generate};
 
     my @ret_toks;
     my $tok = START_TOK;

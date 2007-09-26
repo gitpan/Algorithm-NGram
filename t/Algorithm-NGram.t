@@ -1,15 +1,13 @@
-# Before `make install' is performed this script should be runnable with
-# `make test'. After `make install' it should work as `perl Algorithm-NGram.t'
-
-#########################
-
-# change 'tests => 1' to 'tests => last_test_to_print';
-
-use Test::More tests => 1;
+use Test::More qw/no_plan/;
 BEGIN { use_ok('Algorithm::NGram') };
 
-#########################
+my $ng = Algorithm::NGram->new(ngram_width => 3);
+$ng->add_text('yesterday my best dog went to the deli');
+$ng->add_text('yesterday my best friend went to the market');
 
-# Insert your test code below, the Test::More module is use()ed here so read
-# its man page ( perldoc Test::More ) for help writing this test script.
+like($ng->generate_text, qr/yesterday my best (friend|dog) went to the (deli|market)/, "Text trigram");
 
+my $ser = $ng->serialize;
+
+my $ng2 = Algorithm::NGram->deserialize($ser);
+is_deeply($ng2->token_table, $ng->token_table, 'Serialize/deserialize');

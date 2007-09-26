@@ -4,16 +4,17 @@ use warnings;
 
 use Carp qw (croak);
 use List::Util qw (shuffle);
+use Storable;
 
 use base qw/Class::Accessor::Fast/;
-__PACKAGE__->mk_accessors(qw/token_count token_table/);
+__PACKAGE__->mk_accessors(qw/ngram_width token_table tokens dirty/);
 
 use constant {
     START_TOK => ':STARTTOK:',
     END_TOK => ':ENDTOK:',
 };
 
-our $VERSION = 0.3;
+our $VERSION = 0.4;
 
 =head1 NAME
 
@@ -22,7 +23,9 @@ Algorithm::NGram
 =head1 SYNPOSIS
 
     use Algorithm::NGram;
-    my $ng = Algorithm::NGram->new(token_size => 3); # use trigrams
+    my $ng = Algorithm::NGram->new(ngram_width => 3); # use trigrams
+
+    # feed in text
     $ng->add_text($text1); # analyze $text1
     $ng->add_text($text2); # analyze $text2
 
@@ -38,10 +41,6 @@ Algorithm::NGram
 This is a module for analyzing token sequences with n-grams. You can
 use it to parse a block of text, or feed in your own tokens. It can
 generate new sequences of tokens from what has been fed in.
-
-=head1 VERSION
-
-Version 0.01
 
 =head1 EXPORT
 
@@ -59,10 +58,10 @@ B<Options:>
 
 =over 4
 
-=item token_count
+=item ngram_width
 
 This is the "window size" of how many tokens the analyzer will keep
-track of. A token_count of two will make a bigram, a token count of
+track of. A ngram_width of two will make a bigram, a ngram_width of
 three will make a trigram, etc...
 
 =back
@@ -73,20 +72,24 @@ sub new {
     my ($class, %opts) = @_;
 
     # trigram by default
-    my $token_count = delete $opts{token_count} || 3;
+    my $ngram_width = delete $opts{ngram_width} || 3;
+
+    my $token_table = delete $opts{token_table} || {};
+    my $tokens = delete $opts{tokens} || [];
 
     my $self = {
-        token_count => $token_count,
-        token_table => {},
-        tokens => [],
+        ngram_width => $ngram_width,
+        token_table => $token_table,
+        tokens => $tokens,
     };
 
     bless $self, $class;
+    $self->dirty(1);
 
     return $self;
 }
 
-=item token_count
+=item ngram_width
 
 Returns token window size (e.g. the "n" in n-gram)
 
@@ -134,6 +137,7 @@ Adds an arbitrary list of tokens.
 sub add_tokens {
     my ($self, @tokens) = @_;
     push @{$self->{tokens}}, @tokens;
+    $self->dirty(1);
 }
 
 =item add_start_token
@@ -164,8 +168,8 @@ sub add_end_token {
 =item analyze
 
 Generates an n-gram frequency table. Returns a hashref of
-I<< N->tokens->count >>, where N is the number of tokens (will be from 2
-to token_size). You will not normally need to call this unless you
+I<< N => tokens => count >>, where N is the number of tokens (will be from 2
+to ngram_width). You will not normally need to call this unless you
 want to get the n-gram frequency table.
 
 =cut
@@ -175,17 +179,15 @@ sub analyze {
 
     $self->{token_table} = {};
 
-    my (@tokens, @all_tokens);
+    my @all_tokens = @{$self->tokens};
 
-    for (my $i = 1; $i <= $self->token_count; $i++) {
-        @all_tokens = @{$self->{tokens}};
-
+    for (my $i = 1; $i <= $self->ngram_width; $i++) {
         for (my $tok_idx = 0; $tok_idx < @all_tokens; $tok_idx++) {
             my $tok_idx_end = $tok_idx + $i - 1;
             $tok_idx_end = @all_tokens if $tok_idx_end > @all_tokens;
 
             # get tokens
-            @tokens = @all_tokens[$tok_idx .. $tok_idx_end];
+            my @tokens = @all_tokens[$tok_idx ... $tok_idx_end];
 
             # get the token that follows this ngram
             my $next_tok = $all_tokens[$tok_idx_end + 1];
@@ -200,6 +202,8 @@ sub analyze {
             $self->{token_table}->{$i}->{$token_key}->{$next_tok}++;
         }
     }
+
+    $self->dirty(0);
 
     return $self->{token_table};
 }
@@ -228,8 +232,9 @@ previously been fed in.
 sub generate {
     my ($self, %opts) = @_;
 
+    # update n-gram if things have changed
     $self->analyze
-        unless $opts{no_generate};
+        if $self->dirty && ! $opts{no_analyze};
 
     my @ret_toks;
     my $tok = START_TOK;
@@ -240,7 +245,7 @@ sub generate {
         push @ret_toks, $tok if $tok ne START_TOK;
 
         push @cur_toks, $tok;
-        shift @cur_toks while @cur_toks > $self->token_count;
+        shift @cur_toks while @cur_toks > $self->ngram_width;
 
         $tok = $self->next_tok(@cur_toks);
     } while $tok && $tok ne END_TOK;
@@ -256,6 +261,8 @@ Given a list of tokens, will pick a possible token to come next.
 
 sub next_tok {
     my ($self, @toks) = @_;
+
+    return undef unless %{$self->token_table};
 
     my $tok_next = $self->token_lookup(@toks);
     croak "No next tokens defined for tokens " . $self->token_key(@toks)
@@ -283,8 +290,8 @@ sub token_lookup {
     my ($self, @toks) = @_;
 
     my $tok_count = @toks;
-    croak "token_lookup passed more than token_count tokens"
-        unless $tok_count <= $self->token_count;
+    croak "token_lookup passed more than ngram_width tokens"
+        unless $tok_count <= $self->ngram_width;
 
     my $tok_key = $self->token_key(@toks);
 
@@ -301,6 +308,52 @@ table. You will not normally need to call this.
 sub token_key {
     my ($self, @toks) = @_;
     return join('-', @toks);
+}
+
+=item serialize
+
+Returns the tokens and n-gram (if one has been generated) in a string
+
+=cut
+
+sub serialize {
+    my ($self) = @_;
+
+    my $save = {
+        ngram_width => $self->ngram_width,
+        tokens      => $self->tokens,
+        ngram       => $self->token_table,
+    };
+
+    return Storable::nfreeze($save);
+}
+
+=item deserialize($string)
+
+Deserializes a string and returns an C<Algorithm::NGram> instance
+
+=cut
+
+sub deserialize {
+    my ($class, $str) = @_;
+    croak "Empty string passed to deserialize" unless $str;
+
+    my $save = Storable::thaw($str)
+        or croak "Invalid serialized data passed to deserialize";
+
+    my $tokens = $save->{tokens} || [];
+    my $ngram  = $save->{ngram};
+    my $width  = $save->{ngram_width} or croak "No n-gram width saved";
+
+    my $instance = $class->new(
+                               ngram_width => $width,
+                               token_table => $ngram,
+                               tokens => $tokens,
+                               );
+
+    $instance->dirty(0) if $ngram;
+
+    return $instance;
 }
 
 1;

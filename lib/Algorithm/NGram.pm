@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Carp qw (croak);
+use Class::Accessor::Fast;
 use List::Util qw (shuffle);
 use Storable;
 
@@ -14,7 +15,7 @@ use constant {
     END_TOK => ':ENDTOK:',
 };
 
-our $VERSION = 0.4;
+our $VERSION = 0.5;
 
 =head1 NAME
 

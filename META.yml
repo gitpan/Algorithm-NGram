@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Algorithm-NGram
-version:            0.07
+version:            0.7
 abstract:           ~
 author:
     - Mischa Spiegelmock <mspiegelmock@gmail.com>
